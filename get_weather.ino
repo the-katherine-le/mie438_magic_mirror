@@ -22,6 +22,7 @@ String countryCode = "CA";
 unsigned long lastTime = 0;
 // Timer set to 10 minutes (600000)
 //unsigned long timerDelay = 600000;
+//TO DO: set timer to an hourly interval instead to not exceed API Call limit, timerDelay = 3600*1000
 // Set timer to 10 seconds (10000)
 unsigned long timerDelay = 10000;
 
@@ -48,7 +49,7 @@ void loop() {
   if ((millis() - lastTime) > timerDelay) {
     // Check WiFi connection status
     if(WiFi.status()== WL_CONNECTED){
-      String serverPath = "http://api.openweathermap.org/data/2.5/weather?q=" + city + "," + countryCode + "&APPID=" + openWeatherMapApiKey;
+      String serverPath = "http://api.openweathermap.org/data/2.5/weather?q=" + city + "," + countryCode + "&APPID=" + openWeatherMapApiKey+"&units=metric";
       
       jsonBuffer = httpGETRequest(serverPath.c_str());
       Serial.println(jsonBuffer);
