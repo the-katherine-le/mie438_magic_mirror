@@ -2,11 +2,13 @@
 #include "time.h"
 #include <HTTPClient.h>
 #include <Arduino_JSON.h>
+#include <ArduinoJson.h>//why are there TWO different JSON libraries
+  
 TFT_eSPI tft = TFT_eSPI(); //GUI
 
-//Comment here your wifi / hotspot credentials for personal testing
-const char* ssid = "Katherine";
-const char* password = "password123";
+#define WIFI_SSID "Katherine"
+#define WIFI_PASSWORD "WIFI_PASSWORD123"
+#define WIFI_TIMEOUT 30
 
 ////DATE AND TIME SETUP//////////////////////////////////////////////////////////////////////////////
 const char* ntpServer = "pool.ntp.org";
@@ -42,23 +44,43 @@ void setup() {
 
   // Connect to Wi-Fi
   Serial.print("Connecting to: ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
+  Serial.println(WIFI_SSID);
+  int counter = 0; //For timeout
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  while (WiFi.status() != WL_CONNECTED && counter < WIFI_TIMEOUT) {
     delay(500);
     Serial.print(".");
+    counter++;
   }
+  
   Serial.println("");
   Serial.println("WiFi connected.");
   Serial.println(WiFi.localIP());
 
   // Init and get the time
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  printLocalTime();
+  
 
-  //disconnect WiFi as it's no longer needed
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
+  //Getting the inspirational quote
+  String quote, author;
+  
+  if(WiFi.status() == WL_CONNECTED)
+  {
+    Serial.println("connected");
+    getQuote(quote, author); //get quote
+    
+  }
+  else
+  {
+    quote = "WiFi connection timed out, try again later";
+    Serial.println(quote);
+  }
+
+  delay(1000);
+  printLocalTime();
+  delay(1000);
+  getWeather(); 
 
 }
 
@@ -166,4 +188,72 @@ String httpGETRequest(const char* serverName) {
   http.end();
 
   return payload;
+}
+
+String getURLResponse(String url)
+{
+  HTTPClient http;
+  String jsonstring = "";
+  Serial.println("getting url: " + url);
+  if(http.begin(url))
+  {
+    Serial.print("[HTTP] GET...\n");
+    // start connection and send HTTP header
+    int httpCode = http.GET();
+
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      // HTTP header has been sent and Server response header has been handled
+      Serial.println("[HTTP] GET... code: " + String(httpCode));
+
+      // file found at server
+      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+      jsonstring = http.getString();
+      // use this string for testing very long quotes
+      //jsonstring = "[{\"text\":\"Don't worry about what anybody else is going to do… The best way to predict the future is to invent it. Really smart people with reasonable funding can do just about anything that doesn't violate too many of Newton's Laws!\",\"author\":\"Alan Kay\"}]";
+      Serial.println(jsonstring);
+    }
+    } else {
+      Serial.println("[HTTP] GET... failed, error: " + http.errorToString(httpCode));
+    }
+    http.end();
+  }
+  else {
+    Serial.println("[HTTP] Unable to connect");
+  }
+  return jsonstring;
+}
+
+void getQuote(String &quote, String &author)
+{
+  StaticJsonDocument<1024> doc;
+  String url = "https://www.adafruit.com/api/quotes.php";
+  String jsonquote = getURLResponse(url);
+  if(jsonquote.length() > 0)
+  {
+    // remove start and end brackets, jsonBuffer is confused by them
+    jsonquote = jsonquote.substring(1,jsonquote.length()-1);
+    Serial.println("using: " + jsonquote);
+    DeserializationError error = deserializeJson(doc, jsonquote);
+    if (error) 
+    {
+      Serial.println("json parseObject() failed");
+      Serial.println("bad json: " + jsonquote);
+      quote = "json parseObject() failed";
+    }
+    else
+    {
+      String tquote = doc["text"];
+      String tauthor = doc["author"];
+      quote = tquote;
+      author = tauthor;
+
+      Serial.println(quote);
+      Serial.println(author);
+    }
+  }
+  else
+  {
+    quote = "Error retrieving URL";
+  }
 }
