@@ -1,6 +1,9 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Arduino_JSON.h>
+#include <TFT_eSPI.h>
+#include <SPI.h>
+TFT_eSPI tft = TFT_eSPI();
 
 //Comment here your wifi / hotspot credentials for personal testing
 const char* ssid = "Katherine";
@@ -8,100 +11,141 @@ const char* password = "password123";
 
 // Your Domain name with URL path or IP address with path
 // Replace with unique API key
-String openWeatherMapApiKey = "477dd289768ed286827eeb432969043c";
-
-// Example:
-//String openWeatherMapApiKey = "bd939aa3d23ff33d3c8f5dd1dd435";
+const String openWeatherMapApiKey = "477dd289768ed286827eeb432969043c";
 
 // Replace with your country code and city
-String city = "Toronto";
-String countryCode = "CA";
+const String city = "Toronto";
+const String countryCode = "CA";
 
 // THE DEFAULT TIMER IS SET TO 10 SECONDS FOR TESTING PURPOSES
 // For a final application, check the API call limits per hour/minute to avoid getting blocked/banned
 unsigned long lastTime = 0;
-// Timer set to 10 minutes (600000)
-//unsigned long timerDelay = 600000;
+
 //TO DO: set timer to an hourly interval instead to not exceed API Call limit, timerDelay = 3600*1000
 // Set timer to 10 seconds (10000)
 unsigned long timerDelay = 10000;
-
-String jsonBuffer;
+bool initWeatherQuery = false;
+String temp, pressure, humidity, wind, description;
 
 void setup() {
   Serial.begin(115200);
-
   WiFi.begin(ssid, password);
   Serial.println("Connecting");
-  while(WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
   Serial.println("");
   Serial.print("Connected to WiFi network with IP Address: ");
   Serial.println(WiFi.localIP());
- 
+
   Serial.println("Timer set to 10 seconds (timerDelay variable), it will take 10 seconds before publishing the first reading.");
+
+  //Initialize touch screen
+//  tft.begin();
+//  tft.setRotation(1); //Horizontal
+//  tft.fillScreen(BLACK);
 }
 
 void loop() {
-  // Send an HTTP GET request
   if ((millis() - lastTime) > timerDelay) {
-    // Check WiFi connection status
-    if(WiFi.status()== WL_CONNECTED){
-      String serverPath = "http://api.openweathermap.org/data/2.5/weather?q=" + city + "," + countryCode + "&APPID=" + openWeatherMapApiKey+"&units=metric";
-      
-      jsonBuffer = httpGETRequest(serverPath.c_str());
-      Serial.println(jsonBuffer);
-      JSONVar myObject = JSON.parse(jsonBuffer);
-  
-      // JSON.typeof(jsonVar) can be used to get the type of the var
-      if (JSON.typeof(myObject) == "undefined") {
-        Serial.println("Parsing input failed!");
-        return;
-      }
-    
-      Serial.print("JSON object = ");
-      Serial.println(myObject);
-      Serial.print("Temperature: ");
-      Serial.println(myObject["main"]["temp"]);
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Getting weather data...");
+      getWeather(temp, pressure, humidity, wind, description); 
+      Serial.print("Temp: ");
+      Serial.println(temp);
       Serial.print("Pressure: ");
-      Serial.println(myObject["main"]["pressure"]);
+      Serial.println(pressure);
       Serial.print("Humidity: ");
-      Serial.println(myObject["main"]["humidity"]);
-      Serial.print("Wind Speed: ");
-      Serial.println(myObject["wind"]["speed"]);
+      Serial.println(humidity);
+      Serial.println("Wind Speed: ");
+      Serial.print(wind);
+      Serial.print("Description");
+      Serial.println(description); 
     }
     else {
-      Serial.println("WiFi Disconnected");
+      Serial.println("Wifi disconnect...");
     }
-    lastTime = millis();
+    lastTime = millis(); //Just keep incrementing the timer
+  }
+  else {
+    Serial.print(".");
   }
 }
 
-String httpGETRequest(const char* serverName) {
-  WiFiClient client;
+String getURLResponse(String url)
+{
   HTTPClient http;
-    
-  // Your Domain name with URL path or IP address with path
-  http.begin(client, serverName);
-  
-  // Send HTTP POST request
-  int httpResponseCode = http.GET();
-  
-  String payload = "{}"; 
-  
-  if (httpResponseCode>0) {
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-    payload = http.getString();
+  String jsonstring = "";
+  Serial.println("getting url: " + url);
+  if (http.begin(url))
+  {
+    Serial.print("[HTTP] GET...\n");
+    // start connection and send HTTP header
+    int httpCode = http.GET();
+
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      // HTTP header has been sent and Server response header has been handled
+      Serial.println("[HTTP] GET... code: " + String(httpCode));
+
+      // file found at server
+      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+        jsonstring = http.getString();
+        // use this string for testing very long quotes
+        //jsonstring = "[{\"text\":\"Don't worry about what anybody else is going to do… The best way to predict the future is to invent it. Really smart people with reasonable funding can do just about anything that doesn't violate too many of Newton's Laws!\",\"author\":\"Alan Kay\"}]";
+        Serial.println(jsonstring);
+      }
+    } else {
+      Serial.println("[HTTP] GET... failed, error: " + http.errorToString(httpCode));
+    }
+    http.end();
   }
   else {
-    Serial.print("Error code: ");
-    Serial.println(httpResponseCode);
+    Serial.println("[HTTP] Unable to connect");
   }
-  // Free resources
-  http.end();
+  return jsonstring;
+}
 
-  return payload;
+void getWeather(String &temp, String &pressure, String &humidity, String &wind, String &description)
+{
+
+  DynamicJsonDocument(1024) doc;
+  String url = "http://api.openweathermap.org/data/2.5/weather?q=" + city + "," + countryCode + "&APPID=" + openWeatherMapApiKey + "&units=metric";
+  String jsonWeather = getURLResponse(url);
+  
+  if (jsonWeather.length() > 0)
+  {
+    // remove start and end brackets, jsonBuffer is confused by them
+    jsonWeather = jsonWeather.substring(1, jsonWeather.length() - 1);
+
+    Serial.println("using: " + jsonWeather);
+
+    DeserializationError error = deserializeJson(doc, jsonWeather);
+
+    if (error)
+    {
+      Serial.println("json parseObject() failed");
+      Serial.println("bad json: " + jsonWeather);
+      Serial.println("json parseObject() failed");
+    }
+    else
+    {
+      float t_temp = (float)(doc["main"]["temp"]);        // get temperature
+      int   t_humidity = doc["main"]["humidity"];                  // get humidity
+      float t_pressure = (float)(doc["main"]["pressure"]) / 1000;  // get pressure
+      float t_wind_speed = doc["wind"]["speed"];                   // get wind speed
+      String t_description = doc["weather"][0]["description"];
+
+      temp = t_temp.as<String>();
+      humidity = t_humidity.as<String>();
+      pressure = t_pressure.as<String>();
+      wind = t_wind.as<String>();
+      description = t_description.as<String>();
+    }
+  }
+  else
+  {
+    Serial.println("Error retrieving URL");
+  }
 }
