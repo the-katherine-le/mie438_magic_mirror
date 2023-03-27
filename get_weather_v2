@@ -1,0 +1,205 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <TFT_eSPI.h>
+#include <SPI.h>
+TFT_eSPI tft = TFT_eSPI();
+
+//Comment here your wifi / hotspot credentials for personal testing
+const char* ssid = "Katherine";
+const char* password = "password123";
+
+// Your Domain name with URL path or IP address with path
+// Replace with unique API key
+const String openWeatherMapApiKey = "477dd289768ed286827eeb432969043c";
+
+// Replace with your country code and city
+const String city = "Toronto";
+const String countryCode = "CA";
+
+// THE DEFAULT TIMER IS SET TO 10 SECONDS FOR TESTING PURPOSES
+// For a final application, check the API call limits per hour/minute to avoid getting blocked/banned
+unsigned long lastTime = 0;
+
+//TO DO: set timer to an hourly interval instead to not exceed API Call limit, timerDelay = 3600*1000
+// Set timer to 10 seconds (10000)
+unsigned long timerDelay = 10000;
+bool initWeatherQuery = false;
+
+//Variables
+float temp;
+float feels_like;
+int humidity;
+
+//Define colors for touchscreen display
+#define BLACK 0x0000
+#define WHITE 0xFFFF
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  Serial.println("Connecting");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.print("Connected to WiFi network with IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  Serial.println("Timer set to 10 seconds (timerDelay variable), it will take 10 seconds before publishing the first reading.");
+
+  //Initialize touch screen
+  tft.begin();
+  tft.setRotation(1); //Horizontal
+  tft.fillScreen(BLACK);
+}
+
+void loop() {
+  if ((millis() - lastTime) > timerDelay) {
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Getting weather data...");
+      getWeather(temp, feels_like, humidity);
+      //Uncomment for testing using serial monitor
+      //
+      //String s_temp = String(temp);
+      //String s_feelslike = String(feels_like);
+      //String s_humidity = String(humidity);
+      //      Serial.println("Passing from function: ");
+      //      Serial.print("Temp: ");
+      //      Serial.println(s_temp);
+      //      Serial.print("Feels like: ");
+      //      Serial.println(s_feelslike);
+      //      Serial.print("Humidity: ");
+      //      Serial.println(s_humidity);
+    }
+    else {
+      Serial.println("Wifi disconnect...");
+    }
+    lastTime = millis(); //Just keep incrementing the timer
+  }
+  else {
+    Serial.print(".");
+  }
+  String s_temp = String(temp);
+  String s_feelslike = String(feels_like);
+  String s_humidity = String(humidity);
+  
+  drawWeather(s_temp, s_feelslike, s_humidity);
+}
+
+String getURLResponse(String url)
+{
+  HTTPClient http;
+  String jsonstring = "";
+  Serial.println("getting url: " + url);
+  if (http.begin(url))
+  {
+    Serial.print("[HTTP] GET...\n");
+    // start connection and send HTTP header
+    int httpCode = http.GET();
+
+    // httpCode will be negative on error
+    if (httpCode > 0) {
+      // HTTP header has been sent and Server response header has been handled
+      Serial.println("[HTTP] GET... code: " + String(httpCode));
+
+      // file found at server
+      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+        jsonstring = http.getString();
+        // use this string for testing very long quotes
+        //jsonstring = "[{\"text\":\"Don't worry about what anybody else is going to do… The best way to predict the future is to invent it. Really smart people with reasonable funding can do just about anything that doesn't violate too many of Newton's Laws!\",\"author\":\"Alan Kay\"}]";
+        Serial.println(jsonstring);
+      }
+    } else {
+      Serial.println("[HTTP] GET... failed, error: " + http.errorToString(httpCode));
+    }
+    http.end();
+  }
+  else {
+    Serial.println("[HTTP] Unable to connect");
+  }
+  return jsonstring;
+}
+
+void getWeather(float &temp, float &feels_like, int &humidity)
+{
+  StaticJsonDocument<80> filter;
+
+  JsonObject filter_main = filter.createNestedObject("main");
+  filter_main["temp"] = true;
+  filter_main["humidity"] = true;
+  filter_main["feels_like"] = true;
+
+  JsonObject filter_weather_0 = filter["weather"].createNestedObject();
+  filter_weather_0["main"] = true;
+  filter_weather_0["description"] = true;
+  filter["wind"]["speed"] = true;
+
+  StaticJsonDocument<192> doc;
+
+  String url = "http://api.openweathermap.org/data/2.5/weather?q=" + city + "," + countryCode + "&APPID=" + openWeatherMapApiKey + "&units=metric";
+  String jsonWeather = getURLResponse(url);
+
+  if (jsonWeather.length() > 0)
+  {
+    Serial.println("using: " + jsonWeather);
+
+    DeserializationError error = deserializeJson(doc, jsonWeather, DeserializationOption::Filter(filter));
+    serializeJsonPretty(doc, Serial); //output results
+
+    if (error)
+    {
+      Serial.println("json parseObject() failed");
+      Serial.println("bad json: " + jsonWeather);
+      Serial.println("json parseObject() failed");
+    }
+    else
+    {
+      //      const char* weather_0_main = doc["weather"][0]["main"]; // "Clouds"
+      //      const char* weather_0_description = doc["weather"][0]["description"]; // "overcast clouds"
+      //This works...for some reason..
+      JsonObject main = doc["main"];
+      float main_temp = main["temp"]; // 2.44
+      float main_feels_like = main["feels_like"];
+      int main_humidity = main["humidity"]; // 89
+
+      //      float wind_speed = doc["wind"]["speed"]; // 8.75
+
+      Serial.println("JSON OUTPUT: ");
+      Serial.print("Temp: ");
+      Serial.println(main_temp);
+      Serial.print("Humidity: ");
+      Serial.println(main_humidity);
+      Serial.print("Feels like: ");
+      Serial.println(main_humidity);
+
+      temp = main_temp;
+      feels_like = main_feels_like;
+      humidity = main_humidity;
+    }
+  }
+  else
+  {
+    Serial.println("Error retrieving URL");
+  }
+}
+
+void drawWeather(String &temp, String &feels_like, String &humidity) {
+  tft.fillScreen(BLACK);
+
+  tft.setCursor(60, 60, 2);
+  tft.setTextColor(WHITE, BLACK);
+  tft.setTextSize(4);
+  tft.println("Temperature: " + temp + "Celsius");
+
+  tft.setCursor(50, 100, 2);
+  tft.setTextColor(WHITE, BLACK);
+  tft.setTextSize(4);
+  tft.println("Feels like: " + feels_like + "Celsius");
+
+  tft.setCursor(50, 140, 2);
+  tft.setTextColor(WHITE, BLACK);
+  tft.setTextSize(4);
+  tft.println("Humidity: " + humidity + "%");
+}
