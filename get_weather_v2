@@ -81,10 +81,12 @@ void loop() {
   else {
     Serial.print(".");
   }
+  //Convert the floats and ints to a string
   String s_temp = String(temp);
   String s_feelslike = String(feels_like);
   String s_humidity = String(humidity);
   
+  //Draw elements
   drawWeather(s_temp, s_feelslike, s_humidity);
 }
 
