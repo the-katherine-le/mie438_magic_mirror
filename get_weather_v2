@@ -22,14 +22,20 @@ const String countryCode = "CA";
 unsigned long lastTime = 0;
 
 //TO DO: set timer to an hourly interval instead to not exceed API Call limit, timerDelay = 3600*1000
-// Set timer to 10 seconds (10000)
-unsigned long timerDelay = 10000;
+// Set timer to 3600 seconds (hourly) 
+unsigned long timerDelay = 3600000;
 bool initWeatherQuery = false;
 
 //Variables
 float temp;
 float feels_like;
 int humidity;
+
+String s_temp;
+String s_feelslike;
+String s_humidity;
+
+bool firstWeatherUpdate = false;
 
 //Define colors for touchscreen display
 #define BLACK 0x0000
@@ -53,41 +59,58 @@ void setup() {
   tft.begin();
   tft.setRotation(1); //Horizontal
   tft.fillScreen(BLACK);
+  tft.setCursor(60, 60, 2);
+  tft.setTextColor(WHITE, BLACK);
+  tft.setTextSize(3);
+  tft.println("GETTING WEATHER...");
 }
 
 void loop() {
+  //only update if previous screen
+  //FORCE IT TO AT LEAST GET THE INFORMATION ONCE
+
+  if (firstWeatherUpdate == false) {
+    Serial.println("Getting weather data...");
+    getWeather(temp, feels_like, humidity);
+
+    s_temp = String(temp);
+    s_feelslike = String(feels_like);
+    s_humidity = String(humidity);
+
+    drawWeather(s_temp, s_feelslike, s_humidity);
+
+    firstWeatherUpdate = true;
+  }
+
   if ((millis() - lastTime) > timerDelay) {
     if (WiFi.status() == WL_CONNECTED) {
       Serial.println("Getting weather data...");
       getWeather(temp, feels_like, humidity);
       //Uncomment for testing using serial monitor
       //
-      //String s_temp = String(temp);
-      //String s_feelslike = String(feels_like);
-      //String s_humidity = String(humidity);
-      //      Serial.println("Passing from function: ");
-      //      Serial.print("Temp: ");
-      //      Serial.println(s_temp);
-      //      Serial.print("Feels like: ");
-      //      Serial.println(s_feelslike);
-      //      Serial.print("Humidity: ");
-      //      Serial.println(s_humidity);
+      s_temp = String(temp);
+      s_feelslike = String(feels_like);
+      s_humidity = String(humidity);
+
+      Serial.println("Passing from function: ");
+      Serial.print("Temp: ");
+      Serial.println(s_temp);
+      Serial.print("Feels like: ");
+      Serial.println(s_feelslike);
+      Serial.print("Humidity: ");
+      Serial.println(s_humidity);
+
+      //update the screen ONLY when there is a weather update!
+      drawWeather(s_temp, s_feelslike, s_humidity);
     }
     else {
-      Serial.println("Wifi disconnect...");
+      Serial.println("Wifi disconnected...");
     }
     lastTime = millis(); //Just keep incrementing the timer
   }
   else {
     Serial.print(".");
   }
-  //Convert the floats and ints to a string
-  String s_temp = String(temp);
-  String s_feelslike = String(feels_like);
-  String s_humidity = String(humidity);
-  
-  //Draw elements
-  drawWeather(s_temp, s_feelslike, s_humidity);
 }
 
 String getURLResponse(String url)
@@ -190,18 +213,18 @@ void getWeather(float &temp, float &feels_like, int &humidity)
 void drawWeather(String &temp, String &feels_like, String &humidity) {
   tft.fillScreen(BLACK);
 
-  tft.setCursor(60, 60, 2);
+  tft.setCursor(10, 60, 2);
   tft.setTextColor(WHITE, BLACK);
-  tft.setTextSize(4);
-  tft.println("Temperature: " + temp + "Celsius");
+  tft.setTextSize(3);
+  tft.println("Temperature: " + temp + "C");
 
-  tft.setCursor(50, 100, 2);
+  tft.setCursor(10, 100, 2);
   tft.setTextColor(WHITE, BLACK);
-  tft.setTextSize(4);
-  tft.println("Feels like: " + feels_like + "Celsius");
+  tft.setTextSize(3);
+  tft.println("Feels like: " + feels_like + "C");
 
-  tft.setCursor(50, 140, 2);
+  tft.setCursor(10, 140, 2);
   tft.setTextColor(WHITE, BLACK);
-  tft.setTextSize(4);
+  tft.setTextSize(3);
   tft.println("Humidity: " + humidity + "%");
 }
